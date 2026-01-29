@@ -39,49 +39,50 @@ public class Settings : MonoBehaviour
     }
     public void Save_Restart()
     {
-        int r = int.Parse(row.text);
-        int c = int.Parse(column.text);
-        int col = int.Parse(colour.text);
-        int a = int.Parse(A.text);
-        int b = int.Parse(B.text);
-        int cc = int.Parse(C.text);
-
-
-
-        /*if (r < 0 || r > 10 || c < 0 || c > 10)
+        int r, c, col, a, b, cc;
+        
+        // Parse inputs safely
+        if (!int.TryParse(row.text, out r) || 
+            !int.TryParse(column.text, out c) || 
+            !int.TryParse(colour.text, out col) || 
+            !int.TryParse(A.text, out a) || 
+            !int.TryParse(B.text, out b) || 
+            !int.TryParse(C.text, out cc))
         {
-            errorMessageText.text = "Satýr ve sütun deðerleri 0 ile 10 arasýnda olmalý!";
+            errorMessageText.text = "Invalid Input: Please enter numbers only.";
+            return;
+        }
+
+        if (r < 2 || r > 10 || c < 2 || c > 10)
+        {
+            errorMessageText.text = "Rows and Columns must be between 2 and 10!";
         }
         else if (col <= 0 || col > 6)
         {
-            errorMessageText.text = "Renk deðeri 1 ile 6 arasýnda olmalý!";
+            errorMessageText.text = "Colors must be between 1 and 6!";
         }
         else if (a <= 0)
         {
-            errorMessageText.text = "A deðeri 0'dan büyük olmalý!";
-        }
-        else if (cc <= b)
-        {
-            errorMessageText.text = "C, B'den büyük olmalý!";
+            errorMessageText.text = "A must be greater than 0!";
         }
         else if (b <= a)    
         {
-            errorMessageText.text = "B, A'dan büyük olmalý!";
-        }*/  
-        // this part made editor crash?
-
-        if (r < 2 || r > 10 || c < 2 || c > 10 || col <= 0 || col > 6 || a <= 0 || cc <= b || b <= a)
-            return;
-
+            errorMessageText.text = "B must be greater than A!";
+        }
+        else if (cc <= b)
+        {
+            errorMessageText.text = "C must be greater than B!";
+        }
         else
         {
+            // Inputs are valid
+            errorMessageText.text = "";
             GameManager.Instance.ClearBoard();
             
             GameManager.Instance.SetManager(new ManagerData(r, c, col, a, b, cc));
-            errorMessageText.text = "";
+            
             Close(PauseMenu);
             GameManager.Instance.Start();
         }
     }
-
 }

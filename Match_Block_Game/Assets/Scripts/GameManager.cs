@@ -28,6 +28,14 @@ public class GameManager : MonoBehaviour
     public List<List<Cell>> blastableGroups;
     private bool Animating;
 
+    private Queue<GameObject> pool = new Queue<GameObject>();
+
+    private List<Transform> animTransforms = new List<Transform>(100);
+    private List<Vector2> animStarts = new List<Vector2>(100);
+    private List<Vector2> animEnds = new List<Vector2>(100);
+    private List<float> animTimers = new List<float>(100);
+    private const float AnimationDuration = 0.5f;
+
     void Awake()
     {
         if (Instance == null)
@@ -47,6 +55,77 @@ public class GameManager : MonoBehaviour
         blastableGroups = new List<List<Cell>>();
         CreateBoard(Rows, Columns);
         CheckConnectedBlocks();
+    }
+
+    private void Update()
+    {
+        ProcessAnimations();
+    }
+
+    private void ProcessAnimations()
+    {
+        if (animTransforms.Count == 0) return;
+
+        for (int i = animTransforms.Count - 1; i >= 0; i--)
+        {
+            if (animTransforms[i] == null || !animTransforms[i].gameObject.activeSelf)
+            {
+                RemoveAnimationAt(i);
+                continue;
+            }
+
+            animTimers[i] += Time.deltaTime;
+            float t = animTimers[i] / AnimationDuration;
+
+            if (t >= 1f)
+            {
+                animTransforms[i].position = animEnds[i];
+                RemoveAnimationAt(i);
+            }
+            else
+            {
+                animTransforms[i].position = Vector2.Lerp(animStarts[i], animEnds[i], t);
+            }
+        }
+    }
+
+    private void RegisterDropAnimation(Transform t, Vector2 start, Vector2 end)
+    {
+        animTransforms.Add(t);
+        animStarts.Add(start);
+        animEnds.Add(end);
+        animTimers.Add(0f);
+    }
+
+    private void RemoveAnimationAt(int index)
+    {
+        animTransforms.RemoveAt(index);
+        animStarts.RemoveAt(index);
+        animEnds.RemoveAt(index);
+        animTimers.RemoveAt(index);
+    }
+
+    private GameObject GetFromPool(Vector2 position, Quaternion rotation)
+    {
+        if (pool.Count > 0)
+        {
+            GameObject obj = pool.Dequeue();
+            obj.transform.position = position;
+            obj.transform.rotation = rotation;
+            obj.SetActive(true);
+            return obj;
+        }
+        else
+        {
+            GameObject obj = Instantiate(cellPrefab, position, rotation, transform);
+            return obj;
+        }
+    }
+
+    private void ReturnToPool(GameObject obj)
+    {
+        obj.SetActive(false);
+        pool.Enqueue(obj);
     }
 
     void CreateBoard(int rows, int columns)
@@ -96,9 +175,11 @@ public class GameManager : MonoBehaviour
                 index++;
 
                 Vector2 position = new Vector2(col * cellSize, row * -cellSize);
-                GameObject cellObject = Instantiate(cellPrefab, position, Quaternion.identity);
+                GameObject cellObject = GetFromPool(position, Quaternion.identity);
                 cellObject.GetComponent<SpriteRenderer>().sortingOrder = rows - row - 1;
-                cellObject.transform.SetParent(transform);
+
+                if (cellObject.transform.parent != transform)
+                    cellObject.transform.SetParent(transform);
 
                 Cell cellScript = cellObject.GetComponent<Cell>();
                 cellScript.SetIndex(new Vector2Int(row, col));
@@ -106,8 +187,6 @@ public class GameManager : MonoBehaviour
                 board[row, col] = cellScript;
             }
         }
-
-        EnsureValidBoard(rows, columns);
 
         Camera.main.transform.position = new Vector3(((columns - 1) * cellSize) / 2, (rows - 1) * -cellSize / 2, Camera.main.transform.position.z);
     }
@@ -122,54 +201,6 @@ public class GameManager : MonoBehaviour
             list[randomIndex] = temp;
         }
     }
-
-    void EnsureValidBoard(int rows, int columns)
-    {
-            if (blastableGroups.Count == 0)
-            {
-                Debug.Log("Deadlock detected. Swapping colors.");
-            SwapColors( rows, columns);
-            }
-            
-        
-    }
-    void SwapColors(int rows, int columns)
-    {
-        List<Vector2Int> selectedCells = new List<Vector2Int>();
-
-        int numberOfCellsToSwap = Mathf.CeilToInt((float)(rows * columns) / Colours);
-
-        for (int i = 0; i < numberOfCellsToSwap; i++)
-        {
-            int row = Random.Range(0, rows);
-            int col = Random.Range(0, columns);
-
-            int neighborRow = row;
-            int neighborCol = col;
-
-            if (col < columns - 1)
-            {
-                neighborCol = col + 1;
-            }
-            else
-            {
-                neighborCol = col - 1;
-            }
-
-            if (board[row, col] != null && board[neighborRow, neighborCol] != null)
-            {
-                Debug.Log("11111");
-                Debug.Log(board[row, col].GetIndex());
-                Debug.Log(board[neighborRow, neighborCol].GetIndex());
-                Debug.Log(board[row, col].GetColour());
-                Debug.Log(board[neighborRow, neighborCol].GetColour());
-                int tempColor = board[row, col].GetColour();
-                board[row, col].SetColour(board[neighborRow, neighborCol].GetColour());
-                board[neighborRow, neighborCol].SetColour(tempColor);
-            }
-        }
-    }
-
 
     public void CheckConnectedBlocks()
     {
@@ -202,11 +233,130 @@ public class GameManager : MonoBehaviour
                     else
                     {
                         connectedBlocks[0].SetBlastable(false);
-                        connectedBlocks[0].SetBlastableColour(count,A, B, C);
+                        connectedBlocks[0].SetBlastableColour(count, A, B, C);
                     }
                 }
             }
         }
+
+        if (blastableGroups.Count == 0)
+        {
+            Debug.Log("Deadlock detected. Shuffling board.");
+            ShuffleBoard();
+        }
+    }
+
+    private void ShuffleBoard()
+    {
+        List<Cell> allCells = new List<Cell>();
+        List<int> colors = new List<int>();
+
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Columns; col++)
+            {
+                if (board[row, col] != null)
+                {
+                    allCells.Add(board[row, col]);
+                    colors.Add(board[row, col].GetColour());
+                }
+            }
+        }
+
+        for (int i = 0; i < colors.Count; i++)
+        {
+            int temp = colors[i];
+            int r = Random.Range(i, colors.Count);
+            colors[i] = colors[r];
+            colors[r] = temp;
+        }
+
+        for (int i = 0; i < allCells.Count; i++)
+        {
+            allCells[i].SetColour(colors[i]);
+        }
+
+        if (!HasAnyMatch())
+        {
+            ForceMatch(allCells);
+        }
+        ScanAfterShuffle();
+    }
+
+    private void ScanAfterShuffle()
+    {
+        visited = new bool[Rows, Columns];
+        blastableGroups.Clear();
+        BlastGroupCounter = 0;
+
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Columns; col++)
+            {
+                if (!visited[row, col])
+                {
+                    List<Cell> connectedBlocks = new List<Cell>();
+                    count = 0;
+                    DFS(row, col, board[row, col].GetColour(), connectedBlocks);
+
+                    if (connectedBlocks.Count >= 2)
+                    {
+                        BlastGroupCounter++;
+                        foreach (Cell cell in connectedBlocks)
+                        {
+                            cell.SetBlastable(true);
+                            cell.SetBlastGroup(BlastGroupCounter);
+                            cell.SetBlastableColour(count, A, B, C);
+                        }
+                        blastableGroups.Add(connectedBlocks);
+                    }
+                    else
+                    {
+                        connectedBlocks[0].SetBlastable(false);
+                        connectedBlocks[0].SetBlastableColour(count, A, B, C);
+                    }
+                }
+            }
+        }
+    }
+
+    private bool HasAnyMatch()
+    {
+        for (int r = 0; r < Rows; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+            {
+                int color = board[r, c].GetColour();
+                if (c + 1 < Columns && board[r, c + 1].GetColour() == color) return true;
+                if (r + 1 < Rows && board[r + 1, c].GetColour() == color) return true;
+            }
+        }
+        return false;
+    }
+
+    private void ForceMatch(List<Cell> allCells)
+    {
+        if (Rows < 2 && Columns < 2) return;
+
+        Cell targetA = board[0, 0];
+        Cell targetB = (Columns > 1) ? board[0, 1] : board[1, 0];
+
+        int targetColor = targetA.GetColour();
+
+        foreach (var cell in allCells)
+        {
+            if (cell == targetA || cell == targetB) continue;
+
+            if (cell.GetColour() == targetColor)
+            {
+                int tempColor = targetB.GetColour();
+                targetB.SetColour(targetColor);
+                cell.SetColour(tempColor);
+                return;
+            }
+        }
+
+        targetB.SetColour(targetColor);
     }
 
     public void BlastGroup(List<Cell> group)
@@ -220,7 +370,8 @@ public class GameManager : MonoBehaviour
         {
             Vector2Int cellIndex = cell.GetIndex();
             board[cellIndex.x, cellIndex.y] = null;
-            Destroy(cell.gameObject);
+            
+            ReturnToPool(cell.gameObject);
 
             affectedRows.Add(cellIndex.x);
             affectedCols.Add(cellIndex.y);
@@ -238,8 +389,6 @@ public class GameManager : MonoBehaviour
         CheckConnectedBlocks();
         Animating = false;
     }
-
-    
 
     private void DFS(int row, int col, int colour, List<Cell> connectedBlocks)
     {
@@ -277,32 +426,13 @@ public class GameManager : MonoBehaviour
                         board[row, col] = null;
 
                         board[emptyRow, col].SetIndex(new Vector2Int(emptyRow, col));
+                        
+                        board[emptyRow, col].GetComponent<SpriteRenderer>().sortingOrder = Rows - emptyRow - 1;
 
-                        StartCoroutine(AnimateDrop(board[emptyRow, col].transform, startPosition, endPosition));
+                        RegisterDropAnimation(board[emptyRow, col].transform, startPosition, endPosition);
                     }
 
                     emptyRow--;
-                }
-            }
-        }
-
-        foreach (int row in affectedRows)
-        {
-            for (int col = 0; col < Columns; col++)
-            {
-                if (board[row, col] == null)
-                {
-                    Vector2 startPosition = new Vector2(col * cellSize, (Rows + 1) * cellSize);
-                    Vector2 endPosition = new Vector2(col * cellSize, row * -cellSize);
-
-                    GameObject cellObject = Instantiate(cellPrefab, startPosition, Quaternion.identity, transform);
-                    Cell newCell = cellObject.GetComponent<Cell>();
-                    newCell.SetIndex(new Vector2Int(row, col));
-                    newCell.SetColour(Random.Range(0, Colours));
-
-                    board[row, col] = newCell;
-
-                    StartCoroutine(AnimateDrop(cellObject.transform, startPosition, endPosition));
                 }
             }
         }
@@ -321,7 +451,9 @@ public class GameManager : MonoBehaviour
                     Vector2 startPosition = new Vector2(col * cellSize, (Rows + 1) * cellSize);
                     Vector2 endPosition = new Vector2(col * cellSize, row * -cellSize);
 
-                    GameObject cellObject = Instantiate(cellPrefab, startPosition, Quaternion.identity, transform);
+                    GameObject cellObject = GetFromPool(startPosition, Quaternion.identity);
+
+                    cellObject.GetComponent<SpriteRenderer>().sortingOrder = Rows - row - 1;
 
                     Cell newCell = cellObject.GetComponent<Cell>();
                     newCell.SetIndex(new Vector2Int(row, col));
@@ -329,29 +461,19 @@ public class GameManager : MonoBehaviour
 
                     board[row, col] = newCell;
 
-                    StartCoroutine(AnimateDrop(cellObject.transform, startPosition, endPosition));
+                    RegisterDropAnimation(cellObject.transform, startPosition, endPosition);
                 }
             }
         }
     }
 
-    private IEnumerator AnimateDrop(Transform cellTransform, Vector2 startPosition, Vector2 endPosition)
-    {
-        float duration = 0.5f;
-        float elapsedTime = 0f;
-
-        while (elapsedTime < duration && cellTransform != null)
-        {
-            cellTransform.position = Vector2.Lerp(startPosition, endPosition, elapsedTime / duration);
-            elapsedTime += Time.deltaTime;
-            yield return null;
-        }
-
-        cellTransform.position = endPosition;
-    }
-
     public void ClearBoard()
     {
+        animTransforms.Clear();
+        animStarts.Clear();
+        animEnds.Clear();
+        animTimers.Clear();
+
         Debug.Log("clear");
         if (board != null)
         {
@@ -361,7 +483,7 @@ public class GameManager : MonoBehaviour
                 {
                     if (board[row, col] != null)
                     {
-                        Destroy(board[row, col].gameObject);
+                        ReturnToPool(board[row, col].gameObject);
                     }
                 }
             }

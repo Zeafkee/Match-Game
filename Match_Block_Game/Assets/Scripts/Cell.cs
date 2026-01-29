@@ -8,11 +8,18 @@ public class Cell : MonoBehaviour
     [SerializeField] private int colour;
     [SerializeField] private Vector2Int index;
 
+    private SpriteRenderer spriteRenderer;
+
     public GameManager gameManager;
+
+    private void Awake()
+    {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+    }
 
     private void Start()
     {
-        gameManager= GameManager.Instance;
+        gameManager = GameManager.Instance;
     }
 
     public void SetIndex(Vector2Int newIndex)
@@ -37,7 +44,8 @@ public class Cell : MonoBehaviour
     {
         colour = colourIndex;
         Image = Colours.Instance.Sprites_default[colour];
-        GetComponent<SpriteRenderer>().sprite = Image;
+        if (spriteRenderer != null)
+            spriteRenderer.sprite = Image;
     }
 
     public int GetColour()
@@ -76,24 +84,20 @@ public class Cell : MonoBehaviour
             Image = Colours.Instance.Sprites_C[colour];
         }
 
-
-        GetComponent<SpriteRenderer>().sprite = Image;
+        if(spriteRenderer != null)
+            spriteRenderer.sprite = Image;
     }
 
 
     public void Blast()
     {
-        Debug.Log("hey1");
         if (blastable)
         {
             if (gameManager.blastableGroups == null) return;
-            Debug.Log("hey2");
             foreach (var group in gameManager.blastableGroups)
             {
-                Debug.Log("hey3");
                 if (group.Contains(this))
                 {
-                    Debug.Log("hey4");
                     gameManager.BlastGroup(group); 
                     break;
                 }
